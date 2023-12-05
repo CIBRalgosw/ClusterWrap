@@ -15,18 +15,20 @@ import yaml
 class janelia_LSFJob(LSFJob):
     cancel_command = "bkill -d"
 
+
 class janelia_LSFCluster(LSFCluster):
     job_cls = janelia_LSFJob
 
+
 class cibr_SLURMJob(SLURMJob):
     cancel_command = "scancel"
+
 
 class cibr_SLURMCluster(SLURMCluster):
     job_cls = cibr_SLURMJob
 
 
 class _cluster(object):
-
     def __init__(self):
         self.client = None
         self.cluster = None
@@ -35,7 +37,6 @@ class _cluster(object):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-
         if not self.persist_yaml:
             if os.path.exists(self.yaml_path):
                 os.remove(self.yaml_path)
@@ -44,33 +45,34 @@ class _cluster(object):
 
     def set_client(self, client):
         self.client = client
+
     def set_cluster(self, cluster):
         self.cluster = cluster
 
-
     def modify_dask_config(
-        self, options, yaml_name='ClusterWrap.yaml', persist_yaml=False,
+        self,
+        options,
+        yaml_name="ClusterWrap.yaml",
+        persist_yaml=False,
     ):
         dask.config.set(options)
-        yaml_path = str(Path.home()) + '/.config/dask/' + yaml_name
-        with open(yaml_path, 'w') as f:
+        yaml_path = str(Path.home()) + "/.config/dask/" + yaml_name
+        with open(yaml_path, "w") as f:
             yaml.dump(dask.config.config, f, default_flow_style=False)
         self.yaml_path = yaml_path
         self.persist_yaml = persist_yaml
 
-
     def get_dashboard(self):
         if self.cluster is not None:
             return self.cluster.dashboard_link
+
 
 # TODO: not needed?
 #    def adapt_cluster(self, min_workers=None, max_workers=None):
 #        None
 
 
-
 class janelia_lsf_cluster(_cluster):
-
     HOURLY_RATE_PER_CORE = 0.07
 
     def __init__(
@@ -82,17 +84,16 @@ class janelia_lsf_cluster(_cluster):
         max_workers=4,
         walltime="3:59",
         config={},
-        **kwargs
+        **kwargs,
     ):
-
         # call super constructor
         super().__init__()
 
         # set config defaults
         # comm.timeouts values are needed for scaling up big clusters
         config_defaults = {
-            'distributed.comm.timeouts.connect':'180s',
-            'distributed.comm.timeouts.tcp':'360s',
+            "distributed.comm.timeouts.connect": "180s",
+            "distributed.comm.timeouts.tcp": "360s",
         }
         config_defaults = {**config_defaults, **config}
         self.modify_dask_config(config_defaults)
@@ -105,7 +106,7 @@ class janelia_lsf_cluster(_cluster):
 
         # set environment vars
         # prevent overthreading outside dask
-        tpw = 2*ncpus  # threads per worker
+        tpw = 2 * ncpus  # threads per worker
         job_script_prologue = [
             f"export MKL_NUM_THREADS={tpw}",
             f"export NUM_MKL_THREADS={tpw}",
@@ -126,8 +127,8 @@ class janelia_lsf_cluster(_cluster):
             kwargs["log_directory"] = log_dir
 
         # compute ncpus/RAM relationship
-        memory = str(15*ncpus)+'GB'
-        mem = int(15e9*ncpus)
+        memory = str(15 * ncpus) + "GB"
+        mem = int(15e9 * ncpus)
 
         # determine nthreads
         if threads is None:
@@ -155,13 +156,10 @@ class janelia_lsf_cluster(_cluster):
         # set adaptive cluster bounds
         self.adapt_cluster(min_workers, max_workers)
 
-
     def __exit__(self, exc_type, exc_value, traceback):
         super().__exit__(exc_type, exc_value, traceback)
-        
 
     def adapt_cluster(self, min_workers=None, max_workers=None):
-
         # store limits
         if min_workers is not None:
             self.min_workers = min_workers
@@ -175,14 +173,15 @@ class janelia_lsf_cluster(_cluster):
         # give feedback to user
         mn, mx, nc = self.min_workers, self.max_workers, self.ncpus  # shorthand
         cost = round(mx * nc * self.HOURLY_RATE_PER_CORE, 2)
-        print(f"Cluster adapting between {mn} and {mx} workers with {nc} cores per worker")
-        print(f"*** This cluster has an upper bound cost of {cost} dollars per hour ***")
-
-
+        print(
+            f"Cluster adapting between {mn} and {mx} workers with {nc} cores per worker"
+        )
+        print(
+            f"*** This cluster has an upper bound cost of {cost} dollars per hour ***"
+        )
 
 
 class cibr_slurm_cluster(_cluster):
-
     HOURLY_RATE_PER_CORE = 0.07
 
     def __init__(
@@ -194,17 +193,16 @@ class cibr_slurm_cluster(_cluster):
         max_workers=4,
         walltime="3:59:59",
         config={},
-        **kwargs
+        **kwargs,
     ):
-
         # call super constructor
         super().__init__()
 
         # set config defaults
         # comm.timeouts values are needed for scaling up big clusters
         config_defaults = {
-            'distributed.comm.timeouts.connect':'180s',
-            'distributed.comm.timeouts.tcp':'360s',
+            "distributed.comm.timeouts.connect": "180s",
+            "distributed.comm.timeouts.tcp": "360s",
         }
         config_defaults = {**config_defaults, **config}
         self.modify_dask_config(config_defaults)
@@ -217,7 +215,7 @@ class cibr_slurm_cluster(_cluster):
 
         # set environment vars
         # prevent overthreading outside dask
-        tpw = 2*job_cpu  # threads per worker
+        tpw = 2 * job_cpu  # threads per worker
         job_script_prologue = [
             f"export MKL_NUM_THREADS={tpw}",
             f"export NUM_MKL_THREADS={tpw}",
@@ -238,10 +236,6 @@ class cibr_slurm_cluster(_cluster):
             Path(log_dir).mkdir(parents=False, exist_ok=True)
             kwargs["log_directory"] = log_dir
 
-        # compute job_cpu/RAM relationship
-        memory = str(15*job_cpu)+'GB'
-        job_mem = int(15e9*job_cpu)
-
         # determine nthreads
         if threads is None:
             threads = job_cpu
@@ -250,8 +244,8 @@ class cibr_slurm_cluster(_cluster):
         cluster = cibr_SLURMCluster(
             job_cpu=job_cpu,
             processes=processes,
-            memory=memory,
-     #       job_mem=job_mem,
+            # memory=memory,
+            # job_mem=job_mem,
             walltime=walltime,
             cores=threads,
             job_script_prologue=job_script_prologue,
@@ -268,13 +262,10 @@ class cibr_slurm_cluster(_cluster):
         # set adaptive cluster bounds
         self.adapt_cluster(min_workers, max_workers)
 
-
     def __exit__(self, exc_type, exc_value, traceback):
         super().__exit__(exc_type, exc_value, traceback)
-        
 
     def adapt_cluster(self, min_workers=None, max_workers=None):
-
         # store limits
         if min_workers is not None:
             self.min_workers = min_workers
@@ -288,21 +279,21 @@ class cibr_slurm_cluster(_cluster):
         # give feedback to user
         mn, mx, nc = self.min_workers, self.max_workers, self.job_cpu  # shorthand
         cost = round(mx * nc * self.HOURLY_RATE_PER_CORE, 2)
-        print(f"Cluster adapting between {mn} and {mx} workers with {nc} cores per worker")
-        print(f"*** This cluster has an upper bound cost of {cost} dollars per hour ***")
-
-
+        print(
+            f"Cluster adapting between {mn} and {mx} workers with {nc} cores per worker"
+        )
+        print(
+            f"*** This cluster has an upper bound cost of {cost} dollars per hour ***"
+        )
 
 
 class local_cluster(_cluster):
-
     def __init__(
         self,
         config={},
         memory_limit=None,
         **kwargs,
     ):
-
         # initialize base class
         super().__init__()
 
@@ -324,16 +315,12 @@ class local_cluster(_cluster):
         self.set_client(client)
 
 
-
-
 class remote_cluster(_cluster):
-
     def __init__(
         self,
         cluster,  # a dask cluster object, could also be IP address, Cristian what do you prefer?
         config={},
     ):
-
         # initialize base class
         super().__init__()
 
@@ -346,5 +333,3 @@ class remote_cluster(_cluster):
         client = Client(cluster)
         self.set_cluster(cluster)
         self.set_client(client)
-
-
